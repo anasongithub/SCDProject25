@@ -1,23 +1,23 @@
 const readline = require('readline');
 const fs = require('fs');
 const path = require('path');
-const db = require('./db');
-require('./events/logger'); // Initialize event logger
+const db = require('./db/mongo'); // Changed to MongoDB
+require('./events/logger');
 
 const rl = readline.createInterface({
   input: process.stdin,
   output: process.stdout
 });
 
-// Create backups directory if it doesn't exist
+// Create backups directory
 const backupsDir = path.join(__dirname, 'backups');
 if (!fs.existsSync(backupsDir)) {
   fs.mkdirSync(backupsDir);
 }
 
 // FEATURE 4: Automatic Backup System
-function createBackup() {
-  const records = db.listRecords();
+async function createBackup() {
+  const records = await db.listRecords();
   const now = new Date();
   const timestamp = now.toISOString().replace(/:/g, '-').split('.')[0];
   const filename = `backup_${timestamp}.json`;
@@ -28,9 +28,9 @@ function createBackup() {
 }
 
 // FEATURE 1: Search Functionality
-function searchRecords() {
-  rl.question('Enter search keyword: ', (keyword) => {
-    const records = db.listRecords();
+async function searchRecords() {
+  rl.question('Enter search keyword: ', async (keyword) => {
+    const records = await db.listRecords();
     const results = records.filter(record => 
       record.name.toLowerCase().includes(keyword.toLowerCase()) ||
       record.id.toString().includes(keyword) ||
@@ -51,10 +51,10 @@ function searchRecords() {
 }
 
 // FEATURE 2: Sorting Capability
-function sortRecords() {
+async function sortRecords() {
   rl.question('Choose field to sort by (Name/Date): ', (field) => {
-    rl.question('Choose order (Ascending/Descending): ', (order) => {
-      const records = db.listRecords();
+    rl.question('Choose order (Ascending/Descending): ', async (order) => {
+      const records = await db.listRecords();
       let sorted = [...records];
       
       if (field.toLowerCase() === 'name') {
@@ -85,9 +85,9 @@ function sortRecords() {
   });
 }
 
-// FEATURE 3: Export Vault Data to Text File
-function exportData() {
-  const records = db.listRecords();
+// FEATURE 3: Export Vault Data
+async function exportData() {
+  const records = await db.listRecords();
   const now = new Date();
   
   const header = `
@@ -117,9 +117,9 @@ File Name: export.txt
   menu();
 }
 
-// FEATURE 5: Display Data Statistics
-function displayStatistics() {
-  const records = db.listRecords();
+// FEATURE 5: Display Statistics
+async function displayStatistics() {
+  const records = await db.listRecords();
   
   if (records.length === 0) {
     console.log('No records in vault.');
@@ -169,9 +169,9 @@ function menu() {
     switch (ans.trim()) {
       case '1':
         rl.question('Enter name: ', name => {
-          rl.question('Enter value: ', value => {
-            db.addRecord({ name, value });
-            createBackup(); // FEATURE 4: Auto backup
+          rl.question('Enter value: ', async value => {
+            await db.addRecord({ name, value });
+            await createBackup();
             console.log('✅ Record added successfully!');
             menu();
           });
@@ -179,25 +179,27 @@ function menu() {
         break;
         
       case '2':
-        const records = db.listRecords();
-        if (records.length === 0) {
-          console.log('No records found.');
-        } else {
-          records.forEach(r => {
-            const createdDate = new Date(r.id).toISOString().split('T')[0];
-            console.log(`ID: ${r.id} | Name: ${r.name} | Value: ${r.value} | Created: ${createdDate}`);
-          });
-        }
-        menu();
+        (async () => {
+          const records = await db.listRecords();
+          if (records.length === 0) {
+            console.log('No records found.');
+          } else {
+            records.forEach(r => {
+              const createdDate = new Date(r.id).toISOString().split('T')[0];
+              console.log(`ID: ${r.id} | Name: ${r.name} | Value: ${r.value} | Created: ${createdDate}`);
+            });
+          }
+          menu();
+        })();
         break;
         
       case '3':
         rl.question('Enter record ID to update: ', id => {
           rl.question('New name: ', name => {
-            rl.question('New value: ', value => {
-              const updated = db.updateRecord(Number(id), name, value);
+            rl.question('New value: ', async value => {
+              const updated = await db.updateRecord(Number(id), name, value);
               if (updated) {
-                createBackup(); // FEATURE 4: Auto backup
+                await createBackup();
                 console.log('✅ Record updated!');
               } else {
                 console.log('❌ Record not found.');
@@ -209,10 +211,10 @@ function menu() {
         break;
         
       case '4':
-        rl.question('Enter record ID to delete: ', id => {
-          const deleted = db.deleteRecord(Number(id));
+        rl.question('Enter record ID to delete: ', async id => {
+          const deleted = await db.deleteRecord(Number(id));
           if (deleted) {
-            createBackup(); // FEATURE 4: Auto backup
+            await createBackup();
             console.log('🗑️ Record deleted!');
           } else {
             console.log('❌ Record not found.');
@@ -222,24 +224,25 @@ function menu() {
         break;
         
       case '5':
-        searchRecords(); // FEATURE 1
+        searchRecords();
         break;
         
       case '6':
-        sortRecords(); // FEATURE 2
+        sortRecords();
         break;
         
       case '7':
-        exportData(); // FEATURE 3
+        exportData();
         break;
         
       case '8':
-        displayStatistics(); // FEATURE 5
+        displayStatistics();
         break;
         
       case '9':
         console.log('👋 Exiting NodeVault...');
         rl.close();
+        process.exit(0);
         break;
         
       default:
@@ -249,4 +252,8 @@ function menu() {
   });
 }
 
-menu();
+// Initialize MongoDB and start menu
+(async () => {
+  await db.connectDB();
+  menu();
+})();
